@@ -5,11 +5,9 @@ import Control.Monad     (guard)
 import Data.Array (Array,(!),(//),bounds,listArray,Ix(..),elems,assocs)
 import Data.List (foldl', elemIndex, maximumBy, find, delete)
 import Data.Maybe (fromMaybe, mapMaybe, catMaybes, isNothing,isJust)
-import Data.Set (Set)
 import Prelude hiding (catch)
 import Graphics.Vty
 import System.Random (randomRIO)
-import qualified Data.Set as Set
 
 import Types
 import Art

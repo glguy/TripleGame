@@ -94,24 +94,40 @@ bearCollapse b c
   where
   clique = bearGroup b c
 
+-- | Given a set of bears that have moved and a set that have
+-- not attempt to move as many bears as possible.
+moveBearsHelper ::
+  Set Coord {- ^ Bears that have not moved -} ->
+  Set Coord {- ^ Bears that have moved     -} ->
+  Board ->
+  IO Board
+moveBearsHelper stillBears activeBears b =
+  case find (hasAdjacentVacancy b) (Set.toList stillBears) of
+    Nothing   -> return b
+    Just bear -> do
+      (bear', b') <- moveBear bear b
+      moveBearsHelper (Set.delete bear stillBears) (Set.insert bear' activeBears) b'
+
+-- | Move all bears on the board and check for local bear
+-- deaths.
 updateBears :: Coord -> Board -> IO Board
 updateBears c b = do
   let allBears = Set.fromList [c | (c, Just Bear) <- assocs b]
-  b' <- moveBears allBears Set.empty b
-
+  b' <- moveBearsHelper allBears Set.empty b
   return $! foldl' bearCollapse b' (c : neighbors c)
   where
-  moveBears stillBears activeBears b =
-    case find (hasAdjacentVacancy b) (Set.toList stillBears) of
-      Nothing   -> return b
-      Just bear -> do (bear', b') <- moveBear bear b
-                      moveBears (Set.delete bear stillBears) (Set.insert bear' activeBears) b'
     
-  moveBear bear b = do
-    let xs = adjacentVacancies b bear
-    r <- randomRIO (0, length xs - 1)
-    let bear' = xs !! r
-    return (bear', b // [(bear,Nothing),(bear', Just Bear)])
+-- | Move the identified bear to a random adjacent cell
+-- returning the new cell and new board
+moveBear ::
+  Coord {- ^ Coord of bear -} ->
+  Board ->
+  IO (Coord, Board)
+moveBear bear b = do
+  let xs = adjacentVacancies b bear
+  r <- randomRIO (0, length xs - 1)
+  let bear' = xs !! r
+  return (bear', b // [(bear,Nothing),(bear', Just Bear)])
 
 hasAdjacentVacancy :: Board -> Coord -> Bool
 hasAdjacentVacancy b c = not (null (adjacentVacancies b c))

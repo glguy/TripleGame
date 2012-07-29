@@ -34,6 +34,7 @@ data InHand
   = Piece Piece
   | Crystal
   | Robot
+  deriving (Eq, Show, Read)
 
 isRobot :: InHand -> Bool
 isRobot Robot = True
