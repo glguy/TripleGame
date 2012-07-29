@@ -39,21 +39,6 @@ drawBoard cur stash b = vert_cat [draw_row r | r <- [rMin..rMax]]
     p | stashCoord == (r,c) = stash
       | otherwise = fmap Piece (b ! (r,c))
 
-renderPiece :: Piece -> Char
-renderPiece Grass        = 'G'
-renderPiece Bush         = 'B'
-renderPiece Tree         = 'T'
-renderPiece House        = 'H'
-renderPiece RedHouse     = 'R'
-renderPiece Mansion      = 'M'
-renderPiece Castle       = 'C'
-renderPiece FlyingCastle = 'F'
-renderPiece TripleCastle = '!'
-renderPiece Tombstone    = 't'
-renderPiece Church       = 'c'
-renderPiece Cathedral    = 'a'
-renderPiece Rock         = 'r'
-
 emptyImage attr = stringsToImage attr emptySquare
 emptySquare = ["   ",
                "   ",
@@ -82,6 +67,10 @@ pieceGraphic attr inh =
       Rock         -> aux white
                       ["   ",
                        "   ",
+                       "(@)"]
+      BigRock      -> aux white
+                      ["   ",
+                       "(@)",
                        "(@)"]
       Grass        -> aux green
                       ["   ",
@@ -141,6 +130,7 @@ heldText Crystal = "Crystal"
 heldText (Piece p) = case p of
   Bear         -> "Bear"
   Rock         -> "Rock"
+  BigRock      -> "Big rock"
   Grass        -> "Grass"
   Bush         -> "Bush"
   Tree         -> "Tree"
