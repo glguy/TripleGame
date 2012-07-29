@@ -25,25 +25,34 @@ startingGameState rows cols = GameState
   , stash = Nothing
   }
 
+pieceDistribution :: Int -> [(InHand,Int)]
+pieceDistribution t =
+  [ (Piece Grass, 27)
+  , (Piece Bush, 9)
+  , (Piece Tree, 3)
+  , (Robot, 1)
+  , (Crystal, 1)
+  , (Piece (Bear t), 3)
+  ]
+
+main :: IO ()
+main = bracket mkVty shutdown $ \vty ->
+  let boardRows = 6
+      boardCols = 6
+      gs = startingGameState boardRows boardCols
+  in gameLoopWithoutPiece vty gs
+
 randomPiece :: Int -> IO InHand
 randomPiece t = do
-  let pieceChoices = [(Piece Grass, 27), (Piece Bush, 9), (Piece Tree, 3), (Robot, 1), (Crystal, 1), (Piece (Bear t), 3)]
-  let total :: Int
-      total = sum (map snd pieceChoices)
+  let dist = pieceDistribution t
+      total = sum (map snd dist)
   r <- randomRIO (1,total)
-  return $! select r pieceChoices
+  return $! select r dist
   where
   select r ((x,v):xs)
     | r <= v = x
     | otherwise = select (r-v) xs
   select _ _ = error "select: impossible"
-
-main :: IO ()
-main = bracket mkVty shutdown $ \vty -> do
-  let boardRows = 6
-      boardCols = 6
-      gs = startingGameState boardRows boardCols
-  gameLoopWithoutPiece vty gs
 
 gameLoopWithoutPiece :: Vty -> GameState -> IO ()
 gameLoopWithoutPiece vty gs = do
@@ -52,31 +61,28 @@ gameLoopWithoutPiece vty gs = do
 
 gameLoop :: Vty -> InHand -> GameState -> IO ()
 gameLoop vty p gs = do
-    update vty Picture { pic_cursor = NoCursor
-                       , pic_image  = drawGame (coord gs) p (stash gs) (board gs)
-                       , pic_background = Background { background_char = ' '
-                                                     , background_attr = def_attr
-                                                     }
-                       }
+    update vty (gamePicture (coord gs) p (stash gs) (board gs))
     ev <- next_event vty
     let c = coord gs
-    let b = board gs
+        b = board gs
     case ev of
       EvKey k _ -> case k of
-        KUp    | checkCoord (up    c) b -> gameLoop vty p gs { coord = up    (coord gs) }
-        KDown  | checkCoord (down  c) b -> gameLoop vty p gs { coord = down  (coord gs) }
-        KLeft  | checkCoord (left  c) b -> gameLoop vty p gs { coord = left  (coord gs) }
-        KRight | checkCoord (right c) b -> gameLoop vty p gs { coord = right (coord gs) }
+        KUp    | checkCoord (up    c) b -> gameLoop vty p gs { coord = up    c }
+        KDown  | checkCoord (down  c) b -> gameLoop vty p gs { coord = down  c }
+        KLeft  | checkCoord (left  c) b -> gameLoop vty p gs { coord = left  c }
+        KRight | checkCoord (right c) b -> gameLoop vty p gs { coord = right c }
         KEnter | c == stashCoord        -> stashLogic vty p gs
-        KEnter | isRobot p && maybe False isBear (b ! c) -> placeLogic vty (Piece Tombstone) gs
-               | checkEmpty c b /= isRobot p -> placeLogic vty p gs
+        KEnter | killsABear c b p       -> placeLogic vty (Piece Tombstone) gs
+               | legalPlacement c b p   -> placeLogic vty p gs
         KASCII 'd' | b ! c == Just BigRock -> gameLoop vty p gs { board = board gs // [(c,Nothing)] }
         KASCII 'q' -> return ()
         _ -> gameLoop vty p gs
       _ -> gameLoop vty p gs
   where
-  checkCoord c b = inRange (bounds b) c
-  checkEmpty c b = isNothing (b !? c)
+  checkCoord     c b   = inRange (bounds b) c
+  checkEmpty     c b   = isNothing (b ! c)
+  legalPlacement c b p = checkEmpty c b /= isRobot p
+  killsABear     c b p = isRobot p && maybe False isBear (b ! c) 
 
 stashLogic :: Vty -> InHand -> GameState -> IO ()
 stashLogic vty p gs =

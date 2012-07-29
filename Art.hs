@@ -8,6 +8,16 @@ import Types
 -- Drawing Functions
 --
 
+gamePicture :: Coord -> InHand -> Maybe InHand -> Board -> Picture
+gamePicture c p s b = Picture
+  { pic_cursor = NoCursor
+  , pic_image  = drawGame c p s b
+  , pic_background = Background
+      { background_char = ' '
+      , background_attr = def_attr
+      }
+  }
+
 drawGame :: Coord -> InHand -> Maybe InHand -> Board -> Image
 drawGame c p stash b =
  (if isFullBoard b then doneImage else drawCurrent p)
