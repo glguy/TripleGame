@@ -118,7 +118,7 @@ randomPiece = do
     | r <= v = x
     | otherwise = select (r-v) xs
 
-driver = bracket mkVty shutdown $ \vty -> do
+main = bracket mkVty shutdown $ \vty -> do
   let boardRows = 6
       boardCols = 6
       startingCoord = (1,2)
@@ -144,7 +144,10 @@ gameLoop vty c p stash b = do
       EvKey KEnter _ | c == stashCoord -> case stash of
                                        Nothing -> gameLoopWithoutPiece vty c (Just p) b
                                        Just s  -> gameLoop vty c s (Just p) b
-      EvKey KEnter _ | checkEmpty c b /= isRobot p -> placeLogic vty c p stash b
+      EvKey KEnter _ | isRobot p && Just Bear == b !? c -> placeLogic vty c (Piece Tombstone) stash b
+                     | checkEmpty c b /= isRobot p -> placeLogic vty c p stash b
+      EvKey (KASCII 'b') _ -> gameLoop vty c (Piece Bear) stash b
+      EvKey (KASCII 'c') _ -> gameLoop vty c Crystal stash b
       EvKey (KASCII 'q') _ -> return ()
       _ -> gameLoop vty c p stash b
   where
@@ -168,7 +171,7 @@ updateBears b = do
 
   return $! case Set.minView deadBears of -- should be *last* bear placed
     Nothing -> b'
-    Just (bear,killBears) -> insertPiece bear (Just Tombstone) (b // [(dead, Nothing) | dead <- Set.toList killBears])
+    Just (bear,killBears) -> insertPiece bear (Just Tombstone) (b // [(dead, Tombstone) | dead <- Set.toList killBears])
 
   where
   moveBears stillBears activeBears b =

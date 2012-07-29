@@ -22,7 +22,7 @@ doneImage = string def_attr "Game Over"
 
 drawCurrent p = (string def_attr "Current: "
              <-> string def_attr (heldText p))
-            <|> pieceImage def_attr p
+            <|> pieceGraphic def_attr p
 
 -- | Draw board with a highlighted piece
 drawBoard :: Coord -> Maybe InHand -> Board -> Image
@@ -31,7 +31,7 @@ drawBoard cur stash b = vert_cat [draw_row r | r <- [rMin..rMax]]
   ((rMin,cMin),(rMax,cMax)) = bounds b
   draw_row r = horiz_cat [draw_cell r c <|> char def_attr ' ' | c <- [cMin..cMax]]
 
-  draw_cell r c = maybe (emptyImage a) (pieceImage a) p
+  draw_cell r c = maybe (emptyImage a) (pieceGraphic a) p
     where
     a | (r,c) == cur = with_style def_attr reverse_video
       | (r,c) == stashCoord = with_back_color def_attr magenta
@@ -61,61 +61,80 @@ emptySquare = ["   ",
 
 stringsToImage attr xs = vert_cat (map (string attr) xs)
 
-pieceImage attr p = stringsToImage attr (pieceGraphic p)
 
-pieceGraphic Robot =
+brown = Color240 107
+gray = Color240 214
+orange = Color240 180
+                  
+pieceGraphic attr inh =
+ let aux c xs = vert_cat ((map (string (with_fore_color attr c))) xs) in
+  case inh of
+    Robot -> aux orange
                   ["^ ^",
                    "o_o",
                    "|||"]
-
-pieceGraphic Crystal =
+    Crystal -> aux cyan
                   [" ^ ",
                    "|||",
                    "\\_/"]
-                  
-pieceGraphic (Piece p) = case p of
-  Rock         -> ["   ",
-                   "   ",
-                   "(@)"]
-  Grass        -> ["   ",
-                   "   ",
-                   "\\|/"]
-  Bush         -> ["   ",
-                   "   ",
-                   "o8o"]
-  Tree         -> ["o8o",
-                   " | ",
-                   " | "]
-  House        -> ["   ",
-                   " _ ",
-                   "/o\\"]
-  RedHouse     -> [" _ ",
-                   "/_\\",
-                   "|o|"]
-  Mansion      -> ["/_\\",
-                   "|o|",
-                   "|o|"]
-  Castle       -> ["   ",
-                   "   ",
-                   "MmM"]
-  FlyingCastle -> ["   ",
-                   "MmM",
-                   "|X|"]
-  TripleCastle -> ["MmM",
-                   "|X|",
-                   "|X|"]
-  Tombstone    -> ["   ",
-                   " _ ",
-                   "| |"]
-  Church       -> ["_|_",
-                   " | ",
-                   "| |"]
-  Cathedral    -> ["=|=",
-                   "/|\\",
-                   "| |"]
-  Bear         -> ["b.d",
-                   "/o\\",
-                   "_|_"]
+    Piece p ->
+     case p of
+      Rock         -> aux white
+                      ["   ",
+                       "   ",
+                       "(@)"]
+      Grass        -> aux green
+                      ["   ",
+                       "   ",
+                       "\\|/"]
+      Bush         -> aux green
+                      ["   ",
+                       "   ",
+                       "o8o"]
+      Tree         -> vert_cat
+                      [string (with_fore_color attr green) "o8o",
+                       string (with_fore_color attr brown) " | ",
+                       string (with_fore_color attr brown) " | "]
+      House        -> aux white
+                      ["   ",
+                       " _ ",
+                       "/o\\"]
+      RedHouse     -> aux red
+                      [" _ ",
+                       "/_\\",
+                       "|o|"]
+      Mansion      -> aux yellow
+                      ["/_\\",
+                       "|o|",
+                       "|o|"]
+      Castle       -> aux gray
+                      ["   ",
+                       "   ",
+                       "MmM"]
+      FlyingCastle -> aux gray
+                      ["   ",
+                       "MmM",
+                       "|X|"]
+      TripleCastle -> aux orange
+                      ["MmM",
+                       "|X|",
+                       "|X|"]
+      Tombstone    -> aux gray
+                      ["   ",
+                       " _ ",
+                       "| |"]
+      Church       -> aux gray
+                      ["_|_",
+                       " | ",
+                       "| |"]
+      Cathedral    -> aux orange
+                      ["=|=",
+                       "/|\\",
+                       "| |"]
+      Bear         -> aux brown
+                      ["b.d",
+                       "/o\\",
+                       "_|_"]
 
 heldText Robot = "Robot"
 heldText Crystal = "Crystal"
