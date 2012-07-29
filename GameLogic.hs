@@ -26,7 +26,7 @@ promotionRule Church       = Just (3, Just Cathedral)
 promotionRule Cathedral    = Just (3, Nothing)
 promotionRule Rock         = Just (3, Just BigRock)
 promotionRule BigRock      = Just (3, Nothing)
-promotionRule Bear         = Nothing
+promotionRule Bear {}      = Nothing
 
 -- | Return the set of coordinates connected given
 -- a starting location.
@@ -90,9 +90,11 @@ bearCollapse b c
   | Set.null clique = b
   | not (inRange (bounds b) c) = b
   | any (\c -> isNothing (b ! c)) (Set.toList clique) = b
-  | otherwise = insertPiece c (Just Tombstone) (b // [(dead, Just Tombstone) | dead <- Set.toList clique])
+  | otherwise = insertPiece oldestBear (Just Tombstone) (b // [(dead, Just Tombstone) | dead <- Set.toList clique])
   where
   clique = bearGroup b c
+  targetAge = maximum (mapMaybe (\c -> bearAge =<< b ! c) (Set.toList clique))
+  Just oldestBear = find (\x -> (bearAge =<< (b ! x)) == Just targetAge) (Set.toList clique)
 
 -- | Given a set of bears that have moved and a set that have
 -- not attempt to move as many bears as possible.
@@ -105,29 +107,29 @@ moveBearsHelper stillBears activeBears b =
   case find (hasAdjacentVacancy b) (Set.toList stillBears) of
     Nothing   -> return b
     Just bear -> do
-      (bear', b') <- moveBear bear b
+      (bear', b') <- movePiece bear b
       moveBearsHelper (Set.delete bear stillBears) (Set.insert bear' activeBears) b'
 
 -- | Move all bears on the board and check for local bear
 -- deaths.
 updateBears :: Coord -> Board -> IO Board
 updateBears c b = do
-  let allBears = Set.fromList [c | (c, Just Bear) <- assocs b]
+  let allBears = Set.fromList [c | (c, Just (Bear _)) <- assocs b]
   b' <- moveBearsHelper allBears Set.empty b
   return $! foldl' bearCollapse b' (c : neighbors c)
   where
     
 -- | Move the identified bear to a random adjacent cell
 -- returning the new cell and new board
-moveBear ::
-  Coord {- ^ Coord of bear -} ->
+movePiece ::
+  Coord {- ^ Coord of piece to move -} ->
   Board ->
   IO (Coord, Board)
-moveBear bear b = do
-  let xs = adjacentVacancies b bear
+movePiece c b = do
+  let xs = adjacentVacancies b c
   r <- randomRIO (0, length xs - 1)
-  let bear' = xs !! r
-  return (bear', b // [(bear,Nothing),(bear', Just Bear)])
+  let c' = xs !! r
+  return (c', b // [(c,Nothing),(c', b ! c)])
 
 hasAdjacentVacancy :: Board -> Coord -> Bool
 hasAdjacentVacancy b c = not (null (adjacentVacancies b c))

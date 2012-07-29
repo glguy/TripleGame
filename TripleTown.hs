@@ -19,8 +19,8 @@ readLn' :: Read a => IO a
 readLn' = readLn `catch` \SomeException {} -> putStrLn "Bad parse" >> readLn'
 
 
-randomPiece = do
-  let pieceChoices = [(Piece Grass, 27), (Piece Bush, 9), (Piece Tree, 3), (Robot, 1), (Crystal, 1), (Piece Bear, 3)]
+randomPiece turn = do
+  let pieceChoices = [(Piece Grass, 27), (Piece Bush, 9), (Piece Tree, 3), (Robot, 1), (Crystal, 1), (Piece (Bear turn), 3)]
   let total :: Int
       total = sum (map snd pieceChoices)
   r <- randomRIO (1,total)
@@ -34,13 +34,14 @@ main = bracket mkVty shutdown $ \vty -> do
   let boardRows = 6
       boardCols = 6
       startingCoord = (1,2)
-  gameLoopWithoutPiece vty startingCoord Nothing (emptyBoard boardRows boardCols)
+      turn = 0
+  gameLoopWithoutPiece vty startingCoord turn Nothing (emptyBoard boardRows boardCols)
 
-gameLoopWithoutPiece vty c stash b = do
-  p <- randomPiece
-  gameLoop vty c p stash b
+gameLoopWithoutPiece vty c turn stash b = do
+  p <- randomPiece turn
+  gameLoop vty c p (turn + 1) stash b
 
-gameLoop vty c p stash b = do
+gameLoop vty c p turn stash b = do
     update vty Picture { pic_cursor = NoCursor
                        , pic_image  = drawGame c p stash b
                        , pic_background = Background { background_char = ' '
@@ -49,30 +50,28 @@ gameLoop vty c p stash b = do
                        }
     ev <- next_event vty
     case ev of
-      EvKey KUp    _ | checkCoord (up    c) b -> gameLoop vty (up    c) p stash b
-      EvKey KDown  _ | checkCoord (down  c) b -> gameLoop vty (down  c) p stash b
-      EvKey KLeft  _ | checkCoord (left  c) b -> gameLoop vty (left  c) p stash b
-      EvKey KRight _ | checkCoord (right c) b -> gameLoop vty (right c) p stash b
+      EvKey KUp    _ | checkCoord (up    c) b -> gameLoop vty (up    c) p turn stash b
+      EvKey KDown  _ | checkCoord (down  c) b -> gameLoop vty (down  c) p turn stash b
+      EvKey KLeft  _ | checkCoord (left  c) b -> gameLoop vty (left  c) p turn stash b
+      EvKey KRight _ | checkCoord (right c) b -> gameLoop vty (right c) p turn stash b
       EvKey KEnter _ | c == stashCoord -> case stash of
-                                       Nothing -> gameLoopWithoutPiece vty c (Just p) b
-                                       Just s  -> gameLoop vty c s (Just p) b
-      EvKey KEnter _ | isRobot p && Just Bear == b !? c -> placeLogic vty c (Piece Tombstone) stash b
-                     | checkEmpty c b /= isRobot p -> placeLogic vty c p stash b
-      EvKey (KASCII 'd') _ | b ! c == Just BigRock -> gameLoop vty c p stash (b // [(c,Nothing)])
-      EvKey (KASCII 'b') _ -> gameLoop vty c (Piece Bear) stash b
-      EvKey (KASCII 'c') _ -> gameLoop vty c Crystal stash b
+                                       Nothing -> gameLoopWithoutPiece vty c turn (Just p) b
+                                       Just s  -> gameLoop vty c s turn (Just p) b
+      EvKey KEnter _ | isRobot p && maybe False isBear (b ! c) -> placeLogic vty c (Piece Tombstone) turn stash b
+                     | checkEmpty c b /= isRobot p -> placeLogic vty c p turn stash b
+      EvKey (KASCII 'd') _ | b ! c == Just BigRock -> gameLoop vty c p turn stash (b // [(c,Nothing)])
       EvKey (KASCII 'q') _ -> return ()
-      _ -> gameLoop vty c p stash b
+      _ -> gameLoop vty c p turn stash b
   where
   checkCoord c b = inRange (bounds b) c
   checkEmpty c b = isNothing (b !? c)
 
 
-placeLogic vty c p stash b = do
+placeLogic vty c p turn stash b = do
   let b' = case p of
              Crystal -> insertCrystal c b
              Robot   -> insertPiece c Nothing  b
              Piece x -> insertPiece c (Just x) b
   b'' <- updateBears c b'
-  gameLoopWithoutPiece vty c stash b''
+  gameLoopWithoutPiece vty c turn stash b''
 

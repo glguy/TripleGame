@@ -27,7 +27,7 @@ isFullBoard = all isJust . elems
 
 data Piece
   = Rock | BigRock | Grass | Bush | Tree | House | RedHouse | Mansion | Castle | FlyingCastle | TripleCastle
-  | Tombstone | Church | Cathedral | Bear
+  | Tombstone | Church | Cathedral | Bear Int
   deriving (Eq, Show, Read, Ord)
 
 data InHand
@@ -41,8 +41,11 @@ isRobot Robot = True
 isRobot _     = False
 
 isBear :: Piece -> Bool
-isBear Bear = True
-isBear _    = False
+isBear Bear {} = True
+isBear _       = False
+
+bearAge (Bear age) = Just age
+bearAge _          = Nothing
 
 -- | Return the element stored in the array if it is
 -- defined and the coordinate is contained in the array.

@@ -120,7 +120,7 @@ pieceGraphic attr inh =
                       ["=|=",
                        "/|\\",
                        "| |"]
-      Bear         -> aux brown
+      Bear {}      -> aux brown
                       ["b.d",
                        "/o\\",
                        "_|_"]
@@ -128,7 +128,7 @@ pieceGraphic attr inh =
 heldText Robot = "Robot"
 heldText Crystal = "Crystal"
 heldText (Piece p) = case p of
-  Bear         -> "Bear"
+  Bear {}      -> "Bear"
   Rock         -> "Rock"
   BigRock      -> "Big rock"
   Grass        -> "Grass"
