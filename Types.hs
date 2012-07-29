@@ -44,6 +44,7 @@ isBear :: Piece -> Bool
 isBear Bear {} = True
 isBear _       = False
 
+bearAge :: Piece -> Maybe Int
 bearAge (Bear age) = Just age
 bearAge _          = Nothing
 

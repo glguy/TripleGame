@@ -53,7 +53,7 @@ insertPiece c mbP b = fromMaybe boardBeforePromtion mbBoardAfterPromotion
     let clique = connectedGroup c boardBeforePromtion
     guard (Set.size clique >= sz)
 
-    let bMinusClique = b // [(c,Nothing) | c <- Set.toList clique]
+    let bMinusClique = b // [(i,Nothing) | i <- Set.toList clique]
     return (insertPiece c repl bMinusClique)
 
 -- | Insert a crystal into the board optimizing for the largest resulting
@@ -67,7 +67,7 @@ insertCrystal c b =
   where
   candidatePieces = mapMaybe (b !?) (neighbors c)
   crystalLogic (new1,old1,_) (new2,old2,_) = compare (new1,old2) (new2,old1)
-  selectBoard (_,_,b) = b
+  selectBoard (_,_,x) = x
 
 -- | Insert a piece into the board and if promotion occurs
 -- return the new pice, old piece, and resulting board
@@ -89,11 +89,11 @@ bearCollapse :: Board -> Coord -> Board
 bearCollapse b c
   | Set.null clique = b
   | not (inRange (bounds b) c) = b
-  | any (\c -> isNothing (b ! c)) (Set.toList clique) = b
+  | any (\i -> isNothing (b ! i)) (Set.toList clique) = b
   | otherwise = insertPiece oldestBear (Just Tombstone) (b // [(dead, Just Tombstone) | dead <- Set.toList clique])
   where
   clique = bearGroup b c
-  targetAge = maximum (mapMaybe (\c -> bearAge =<< b ! c) (Set.toList clique))
+  targetAge = maximum (mapMaybe (\i -> bearAge =<< b ! i) (Set.toList clique))
   Just oldestBear = find (\x -> (bearAge =<< (b ! x)) == Just targetAge) (Set.toList clique)
 
 -- | Given a set of bears that have moved and a set that have
@@ -114,7 +114,7 @@ moveBearsHelper stillBears activeBears b =
 -- deaths.
 updateBears :: Coord -> Board -> IO Board
 updateBears c b = do
-  let allBears = Set.fromList [c | (c, Just (Bear _)) <- assocs b]
+  let allBears = Set.fromList [i | (i, Just (Bear _)) <- assocs b]
   b' <- moveBearsHelper allBears Set.empty b
   return $! foldl' bearCollapse b' (c : neighbors c)
   where
@@ -137,4 +137,4 @@ hasAdjacentVacancy b c = not (null (adjacentVacancies b c))
 adjacentVacancies :: Board -> Coord -> [Coord]
 adjacentVacancies b c = filter isValid (neighbors c)
   where
-  isValid c = inRange (bounds b) c && isNothing (b ! c)
+  isValid i = inRange (bounds b) i && isNothing (b ! i)
