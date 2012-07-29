@@ -1,7 +1,9 @@
+module Main where
+
 import Control.Exception (SomeException(SomeException),catch,bracket)
 import Control.Monad     (guard)
-import Data.Array (Array,(!),(//),bounds,listArray,Ix(..),elems)
-import Data.List (foldl', elemIndex, maximumBy, transpose)
+import Data.Array (Array,(!),(//),bounds,listArray,Ix(..),elems,assocs)
+import Data.List (foldl', elemIndex, maximumBy, find, delete)
 import Data.Maybe (fromMaybe, mapMaybe, catMaybes, isNothing,isJust)
 import Data.Set (Set)
 import Prelude hiding (catch)
@@ -9,15 +11,8 @@ import Graphics.Vty
 import System.Random (randomRIO)
 import qualified Data.Set as Set
 
-stashCoord = (1,1)
-
-type Coord = (Int,Int)
-type Board = Array Coord (Maybe Piece)
-
-data Piece
-  = Rock | Grass | Bush | Tree | House | RedHouse | Mansion | Castle | FlyingCastle | TripleCastle
-  | Tombstone | Church | Cathedral
-  deriving (Eq, Show, Read, Ord)
+import Types
+import Art
 
 -- The application logic relies on the promotion size being > 1
 promotionRule :: Piece -> Maybe (Int, Maybe Piece)
@@ -34,11 +29,12 @@ promotionRule Tombstone    = Just (3, Just Church)
 promotionRule Church       = Just (3, Just Cathedral)
 promotionRule Cathedral    = Just (3, Nothing)
 promotionRule Rock         = Just (3, Nothing)
+promotionRule Bear         = Nothing
 
 -- | Produce a list of potentially adjacent coordinates.
 -- No bounds checking is possible.
 neighbors :: Coord -> [Coord]
-neighbors c = [up c, down c, left c, right c]
+neighbors c = delete stashCoord [up c, down c, left c, right c]
 
 up (x,y) = (x-1,y)
 down (x,y) = (x+1,y)
@@ -58,11 +54,12 @@ connectedGroup :: Coord -> Board -> Set Coord
 connectedGroup c b =
   case b !? c of
     Nothing     -> Set.empty
-    Just object -> search Set.empty c
-     where
-     search visited c
-       | Set.member c visited || b !? c /= Just object = visited
-       | otherwise = foldl' search (Set.insert c visited) (neighbors c)
+    Just object -> search b (Just object ==) Set.empty c
+
+search :: Board -> (Maybe Piece -> Bool) -> Set Coord -> Coord -> Set Coord
+search b isMatch visited c
+  | Set.member c visited || not (isMatch (b !? c)) = visited
+  | otherwise = foldl' (search b isMatch) (Set.insert c visited) (neighbors c)
 
 -- | Insert a piece into the board and reduce the board when possible.
 insertPiece :: Coord -> Maybe Piece -> Board -> Board
@@ -105,33 +102,21 @@ tryForPromotion b c p = do
 emptyBoard :: Int -> Int -> Board
 emptyBoard r c = listArray ((1,1),(r,c)) (repeat Nothing)
 
-isFullBoard :: Board -> Bool
-isFullBoard = all isJust . elems
-
 readLn' :: Read a => IO a
 readLn' = readLn `catch` \SomeException {} -> putStrLn "Bad parse" >> readLn'
 
 
-data InHand
-  = Piece Piece
-  | Crystal
-  | Robot
-
-isRobot Robot = True
-isRobot _     = False
 
 randomPiece = do
-  let pieceChoices = [Grass, Bush, Tree]
-  loop pieceChoices
+  let pieceChoices = [(Piece Grass, 27), (Piece Bush, 9), (Piece Tree, 3), (Robot, 1), (Crystal, 1), (Piece Bear, 3)]
+  let total :: Int
+      total = sum (map snd pieceChoices)
+  r <- randomRIO (1,total)
+  return $! select r pieceChoices
   where
-  loop [] = do
-    r <- randomRIO (0,1::Int)
-    return $! if r == 0
-                then Crystal
-                else Robot
-  loop (x:xs) = do
-    r <- randomRIO (0, 2 :: Int)
-    if r == 0 then loop xs else return (Piece x)
+  select r ((x,v):xs)
+    | r <= v = x
+    | otherwise = select (r-v) xs
 
 driver = bracket mkVty shutdown $ \vty -> do
   let boardRows = 6
@@ -172,131 +157,41 @@ placeLogic vty c p stash b = do
              Crystal -> insertCrystal c b
              Robot   -> insertPiece c Nothing  b
              Piece x -> insertPiece c (Just x) b
-  gameLoopWithoutPiece vty c stash b'
+  b'' <- updateBears b'
+  gameLoopWithoutPiece vty c stash b''
 
---
--- Drawing Functions
---
+updateBears :: Board -> IO Board
+updateBears b = do
+  let allBears = Set.fromList [c | (c, Just Bear) <- assocs b]
+  (stillBears, activeBears, b') <- moveBears allBears Set.empty b
+  let deadBears = findDeadBears stillBears activeBears
 
-drawGame :: Coord -> InHand -> Maybe InHand -> Board -> Image
-drawGame c p stash b =
- (if isFullBoard b then doneImage else drawCurrent p)
- <->
- string def_attr "=================="
- <->
- drawBoard c stash b
+  return $! case Set.minView deadBears of -- should be *last* bear placed
+    Nothing -> b'
+    Just (bear,killBears) -> insertPiece bear (Just Tombstone) (b // [(dead, Nothing) | dead <- Set.toList killBears])
 
-
-doneImage :: Image
-doneImage = string def_attr "Game Over"
-
-drawCurrent p = (string def_attr "Current: "
-             <-> string def_attr (heldText p))
-            <|> pieceImage def_attr p
-
--- | Draw board with a highlighted piece
-drawBoard :: Coord -> Maybe InHand -> Board -> Image
-drawBoard cur stash b = vert_cat [draw_row r | r <- [rMin..rMax]]
   where
-  ((rMin,cMin),(rMax,cMax)) = bounds b
-  draw_row r = horiz_cat [draw_cell r c <|> char def_attr ' ' | c <- [cMin..cMax]]
+  moveBears stillBears activeBears b =
+    case find (hasAdjacentVacancy b) (Set.toList stillBears) of
+      Nothing   -> return (stillBears, activeBears, b)
+      Just bear -> do b' <- moveBear bear b
+                      moveBears (Set.delete bear stillBears) (Set.insert bear activeBears) b'
+    
+  moveBear bear b = do
+    let xs = adjacentVacancies b bear
+    r <- randomRIO (0, length xs - 1)
+    return (b // [(bear,Nothing),(xs!!r, Just Bear)])
 
-  draw_cell r c = maybe (emptyImage a) (pieceImage a) p
-    where
-    a | (r,c) == cur = with_style def_attr reverse_video
-      | (r,c) == stashCoord = with_back_color def_attr magenta
-      | otherwise = def_attr
-    p | stashCoord == (r,c) = stash
-      | otherwise = fmap Piece (b ! (r,c))
+hasAdjacentVacancy b c = not (null (adjacentVacancies b c))
 
-renderPiece :: Piece -> Char
-renderPiece Grass        = 'G'
-renderPiece Bush         = 'B'
-renderPiece Tree         = 'T'
-renderPiece House        = 'H'
-renderPiece RedHouse     = 'R'
-renderPiece Mansion      = 'M'
-renderPiece Castle       = 'C'
-renderPiece FlyingCastle = 'F'
-renderPiece TripleCastle = '!'
-renderPiece Tombstone    = 't'
-renderPiece Church       = 'c'
-renderPiece Cathedral    = 'a'
-renderPiece Rock         = 'r'
+adjacentVacancies b c = filter isValid (neighbors c)
+  where
+  isValid c = inRange (bounds b) c && isNothing (b ! c)
 
-emptyImage attr = stringsToImage attr emptySquare
-emptySquare = ["   ",
-               "   ",
-               " . "]
+findDeadBears stillBears activeBears =
+  case find adjacentToLive (Set.toList stillBears) of
+    Nothing -> stillBears
+    Just bear -> findDeadBears (Set.delete bear stillBears) (Set.insert bear stillBears)
 
-stringsToImage attr xs = vert_cat (map (string attr) xs)
-
-pieceImage attr p = stringsToImage attr (pieceGraphic p)
-
-pieceGraphic Robot =
-                  ["^ ^",
-                   "o_o",
-                   "|||"]
-
-pieceGraphic Crystal =
-                  [" ^ ",
-                   "|||",
-                   "\\_/"]
-                  
-pieceGraphic (Piece p) = case p of
-  Rock         -> ["   ",
-                   "   ",
-                   "(@)"]
-  Grass        -> ["   ",
-                   "   ",
-                   "\\|/"]
-  Bush         -> ["   ",
-                   "   ",
-                   "o8o"]
-  Tree         -> ["o8o",
-                   " | ",
-                   " | "]
-  House        -> ["   ",
-                   " _ ",
-                   "/o\\"]
-  RedHouse     -> [" _ ",
-                   "/_\\",
-                   "|o|"]
-  Mansion      -> ["/_\\",
-                   "|o|",
-                   "|o|"]
-  Castle       -> ["   ",
-                   "   ",
-                   "MmM"]
-  FlyingCastle -> ["   ",
-                   "MmM",
-                   "|X|"]
-  TripleCastle -> ["MmM",
-                   "|X|",
-                   "|X|"]
-  Tombstone    -> ["   ",
-                   " _ ",
-                   "| |"]
-  Church       -> ["_|_",
-                   " | ",
-                   "| |"]
-  Cathedral    -> ["=|=",
-                   "/|\\",
-                   "| |"]
-
-heldText Robot = "Robot"
-heldText Crystal = "Crystal"
-heldText (Piece p) = case p of
-  Rock         -> "Rock"
-  Grass        -> "Grass"
-  Bush         -> "Bush"
-  Tree         -> "Tree"
-  House        -> "House"
-  RedHouse     -> "Red house"
-  Mansion      -> "Mansion"
-  Castle       -> "Castle"
-  FlyingCastle -> "Flying castle"
-  TripleCastle -> "Triple castle"
-  Tombstone    -> "Tombstone"
-  Church       -> "Church"
-  Cathedral    -> "Cathedral"
+  where
+  adjacentToLive bear = any (`Set.member` activeBears) (neighbors bear)
