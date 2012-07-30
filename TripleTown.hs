@@ -27,11 +27,11 @@ startingGameState rows cols = GameState
 
 pieceDistribution :: Int -> [(InHand,Int)]
 pieceDistribution t =
-  [ (Piece Grass, 60)
-  , (Piece Bush, 15)
-  , (Piece Tree, 2)
-  , (Robot, 3)
-  , (Crystal, 3)
+  [ (Piece Grass   , 60)
+  , (Piece Bush    , 15)
+  , (Piece Tree    ,  2)
+  , (Robot         ,  3)
+  , (Crystal       ,  3)
   , (Piece (Bear t), 15)
   ]
 
@@ -74,7 +74,6 @@ gameLoop vty p gs = do
         KEnter | c == stashCoord        -> stashLogic vty p gs
         KEnter | killsABear c b p       -> placeLogic vty (Piece Tombstone) gs
                | legalPlacement c b p   -> placeLogic vty p gs
-        KASCII 'd' | b ! c == Just BigRock -> gameLoop vty p gs { board = board gs // [(c,Nothing)] }
         KASCII 'q' -> return ()
         _ -> gameLoop vty p gs
       _ -> gameLoop vty p gs

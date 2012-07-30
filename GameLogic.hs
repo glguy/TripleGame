@@ -1,16 +1,22 @@
+-- | Support for operations directly on the Board object
+-- including placing new pieces and animating the bears.
 module GameLogic where
 
-import Data.Set (Set)
-import qualified Data.Set as Set
-import Data.Maybe
+import Control.Monad
 import Data.Array
 import Data.List
-import System.Random
-import Control.Monad
+import Data.Maybe (fromMaybe, mapMaybe, isNothing)
+import Data.Ord (comparing)
+import Data.Set (Set)
+import System.Random (randomRIO)
+import qualified Data.Set as Set
 
 import Types
 
 -- The application logic relies on the promotion size being > 1
+-- | If a promotion rule for a piece exists return it.
+-- If the promotion rule replaces with a new piece it will be specified.
+-- Otherwise the promotion rule deletes the piece.
 promotionRule :: Piece -> Maybe (Int, Maybe Piece)
 promotionRule Grass        = Just (3, Just Bush)
 promotionRule Bush         = Just (3, Just Tree)
@@ -36,10 +42,22 @@ connectedGroup c b =
     Nothing     -> Set.empty
     Just object -> search b (Just object ==) Set.empty c
 
-search :: Board -> (Maybe Piece -> Bool) -> Set Coord -> Coord -> Set Coord
+-- | Find the set of coordinates which are connected along edges
+-- and which satisfy the given predicate starting from the given
+-- coordinate.
+search ::
+  Board                 {- ^ Board to search       -} ->
+  (Maybe Piece -> Bool) {- ^ Predicate function    -} ->
+  Set Coord             {- ^ Known good nodes      -} ->
+  Coord                 {- ^ Start start location  -} ->
+  Set Coord
 search b isMatch visited c
-  | not (inRange (bounds b) c) || Set.member c visited || not (isMatch (b ! c)) = visited
-  | otherwise = foldl' (search b isMatch) (Set.insert c visited) (neighbors c)
+  | not (inRange (bounds b) c) = visited
+  | Set.member c visited       = visited
+  | not (isMatch (b ! c))      = visited
+  | otherwise                  = continue
+  where
+  continue = foldl' (search b isMatch) (Set.insert c visited) (neighbors c)
 
 -- | Insert a piece into the board and reduce the board when possible.
 insertPiece :: Coord -> Maybe Piece -> Board -> Board
@@ -60,14 +78,15 @@ insertPiece c mbP b = fromMaybe boardBeforePromtion mbBoardAfterPromotion
 -- object and smallest initial object. If no promotion is possible, place
 -- a rock.
 insertCrystal :: Coord -> Board -> Board
-insertCrystal c b =
-  case mapMaybe (tryForPromotion b c) candidatePieces of
-    [] -> insertPiece c (Just Rock) b
-    xs -> selectBoard (maximumBy crystalLogic xs)
+insertCrystal c b
+  | null outcomes = insertPiece c (Just Rock) b
+  | otherwise     = selectBoard (maximumBy crystalLogic outcomes)
   where
   candidatePieces = mapMaybe (b !?) (neighbors c)
+  outcomes        = mapMaybe (tryForPromotion b c) candidatePieces
+
   crystalLogic (new1,old1,_) (new2,old2,_) = compare (new1,old2) (new2,old1)
-  selectBoard (_,_,x) = x
+  selectBoard  (_   ,_   ,x) = x
 
 -- | Insert a piece into the board and if promotion occurs
 -- return the new pice, old piece, and resulting board
@@ -79,61 +98,69 @@ tryForPromotion b c p = do
   return (p', p, b')
 
 -- | Construct a new game board of the given dimensions with no pieces placed.
-emptyBoard :: Int -> Int -> Board
+emptyBoard ::
+  Int {- ^ Rows    -} ->
+  Int {- ^ Columns -} ->
+  Board
 emptyBoard r c = listArray ((1,1),(r,c)) (repeat Nothing)
 
+-- | Find the set of connected bears and empty space starting
+-- at a given coordinate.
 bearGroup :: Board -> Coord -> Set Coord
 bearGroup b = search b (maybe True isBear) Set.empty
 
+-- | Attempt to collapse a group of bears starting at a given coordinate
+-- if and only if the group is determined to be dead.
 bearCollapse :: Board -> Coord -> Board
 bearCollapse b c
-  | Set.null clique = b
-  | not (inRange (bounds b) c) = b
-  | any (\i -> isNothing (b ! i)) (Set.toList clique) = b
-  | otherwise = insertPiece oldestBear (Just Tombstone) (b // [(dead, Just Tombstone) | dead <- Set.toList clique])
+  | null clique                = b
+  | any coordIsEmpty clique    = b
+  | otherwise                  = bWithCollapse
   where
-  clique = bearGroup b c
-  targetAge = maximum (mapMaybe (\i -> bearAge =<< b ! i) (Set.toList clique))
-  Just oldestBear = find (\x -> (bearAge =<< (b ! x)) == Just targetAge) (Set.toList clique)
+  coordAge i      = bearAge =<< b ! i
+  coordIsEmpty i  = isNothing (b ! i)
+  clique          = Set.toList (bearGroup b c)
+  youngestBear    = maximumBy (comparing coordAge) clique
+  bKilledClique   = b // [(dead, Just Tombstone) | dead <- clique]
+  bWithCollapse   = insertPiece youngestBear (Just Tombstone) bKilledClique
 
--- | Given a set of bears that have moved and a set that have
--- not attempt to move as many bears as possible.
+-- | Given a set of bears that not moved, attempt to move as many
+-- bears as possible.
 moveBearsHelper ::
   Set Coord {- ^ Bears that have not moved -} ->
-  Set Coord {- ^ Bears that have moved     -} ->
   Board ->
   IO Board
-moveBearsHelper stillBears activeBears b =
+moveBearsHelper stillBears b =
   case find (hasAdjacentVacancy b) (Set.toList stillBears) of
     Nothing   -> return b
     Just bear -> do
-      (bear', b') <- movePiece bear b
-      moveBearsHelper (Set.delete bear stillBears) (Set.insert bear' activeBears) b'
+      b' <- movePiece bear b
+      moveBearsHelper (Set.delete bear stillBears) b'
 
 -- | Move all bears on the board and check for local bear
 -- deaths.
 updateBears :: Coord -> Board -> IO Board
 updateBears c b = do
   let allBears = Set.fromList [i | (i, Just (Bear _)) <- assocs b]
-  b' <- moveBearsHelper allBears Set.empty b
+  b' <- moveBearsHelper allBears b
   return $! foldl' bearCollapse b' (c : neighbors c)
-  where
     
 -- | Move the identified bear to a random adjacent cell
 -- returning the new cell and new board
 movePiece ::
   Coord {- ^ Coord of piece to move -} ->
   Board ->
-  IO (Coord, Board)
+  IO Board
 movePiece c b = do
   let xs = adjacentVacancies b c
   r <- randomRIO (0, length xs - 1)
-  let c' = xs !! r
-  return (c', b // [(c,Nothing),(c', b ! c)])
+  return (b // [(c,Nothing),(xs !! r, b ! c)])
 
+-- | Test if a coordinate is adjacent to an empty space.
 hasAdjacentVacancy :: Board -> Coord -> Bool
 hasAdjacentVacancy b c = not (null (adjacentVacancies b c))
 
+-- | Return the list of empty spaces adjacent to a coordinate.
 adjacentVacancies :: Board -> Coord -> [Coord]
 adjacentVacancies b c = filter isValid (neighbors c)
   where
