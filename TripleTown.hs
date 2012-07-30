@@ -27,12 +27,12 @@ startingGameState rows cols = GameState
 
 pieceDistribution :: Int -> [(InHand,Int)]
 pieceDistribution t =
-  [ (Piece Grass, 27)
-  , (Piece Bush, 9)
-  , (Piece Tree, 3)
-  , (Robot, 1)
-  , (Crystal, 1)
-  , (Piece (Bear t), 3)
+  [ (Piece Grass, 60)
+  , (Piece Bush, 15)
+  , (Piece Tree, 2)
+  , (Robot, 3)
+  , (Crystal, 3)
+  , (Piece (Bear t), 15)
   ]
 
 main :: IO ()
