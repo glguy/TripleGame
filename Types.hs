@@ -26,8 +26,16 @@ isFullBoard :: Board -> Bool
 isFullBoard = null . drop 1 . filter isNothing . elems
   -- This function is ugly to deal with the dead "stash" cell
 
+-- | Construct a new game board of the given dimensions with no pieces placed.
+emptyBoard ::
+  Int {- ^ Rows    -} ->
+  Int {- ^ Columns -} ->
+  Board
+emptyBoard r c = listArray ((1,1),(r,c)) (repeat Nothing)
+
 data Piece
-  = Rock | BigRock | Grass | Bush | Tree | House | RedHouse | Mansion | Castle | FlyingCastle | TripleCastle
+  = Rock | BigRock
+  | Grass | Bush | Tree | House | RedHouse | Mansion | Castle | FlyingCastle | TripleCastle
   | Tombstone | Church | Cathedral | Bear Int | Ninja Int
   deriving (Eq, Show, Read, Ord)
 
@@ -49,8 +57,9 @@ isNinjaOrBear Ninja {} = True
 isNinjaOrBear _        = False
 
 bearAge :: Piece -> Maybe Int
-bearAge (Bear age) = Just age
-bearAge _          = Nothing
+bearAge (Bear  age) = Just age
+bearAge (Ninja age) = Just age
+bearAge _           = Nothing
 
 -- | Return the element stored in the array if it is
 -- defined and the coordinate is contained in the array.

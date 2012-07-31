@@ -1,6 +1,6 @@
 -- | Support for operations directly on the Board object
 -- including placing new pieces and animating the bears.
-module GameLogic where
+module GameLogic (updateBears, insertPiece, insertCrystal) where
 
 import Control.Monad
 import Data.Array
@@ -98,13 +98,6 @@ tryForPromotion b c p = do
   guard (Just p /= p')
   return (p', p, b')
 
--- | Construct a new game board of the given dimensions with no pieces placed.
-emptyBoard ::
-  Int {- ^ Rows    -} ->
-  Int {- ^ Columns -} ->
-  Board
-emptyBoard r c = listArray ((1,1),(r,c)) (repeat Nothing)
-
 -- | Attempt to collapse a group of bears starting at a given coordinate
 -- if and only if the group is determined to be dead.
 bearCollapse :: Board -> Coord -> Board
@@ -125,7 +118,7 @@ moveBearsHelper stillBears liveBears b =
     Just bear ->
       case b!bear of
         Just (Bear {}) -> do
-          (bear', b') <- movePiece bear b
+          (bear', b') <- walkPiece bear b
           moveBearsHelper
             (Set.delete bear stillBears)
             (bear' : liveBears)
@@ -144,42 +137,49 @@ moveBearsHelper stillBears liveBears b =
     Just (Ninja {}) -> not (isFullBoard b)
     _ -> error "moveBearsHelper: impossible"
 
-jumpPiece :: Coord -> Board -> IO (Coord, Board)
-jumpPiece c b = do
-  c' <- randomElement
-      $ delete stashCoord [i | (i, Nothing) <- assocs b]
-  return (c', b // [(c,Nothing),(c', b ! c)])
-
--- | Move all bears on the board and check for local bear
--- deaths.
-updateBears :: Coord -> Board -> IO Board
-updateBears c b = do
+-- | Move all bears on the board and check for bear deaths.
+updateBears :: Board -> IO Board
+updateBears b = do
   let allBears = Set.fromList [i | (i, Just p) <- assocs b, isNinjaOrBear p]
-  (still, live, b') <- moveBearsHelper allBears [] b
-  let still' = Set.toList (liveInfection still (Set.fromList live))
-  let dead  = sortBy (flip (comparing coordAge)) still'
-  let b'' = b' // [(i, Just Tombstone) | i <- still']
-  return $! foldl' bearCollapse b'' dead
+  (still, moved, bAfterMoves) <- moveBearsHelper allBears [] b
+  let live = liveInfection b moved
+  let dead = Set.toList (still `Set.difference` live)
+  let bWithTombstones = bAfterMoves // [(i, Just Tombstone) | i <- dead]
+
+  let ordered = sortBy (flip (comparing coordAge)) dead
+  return $! foldl' bearCollapse bWithTombstones ordered
+
   where
   coordAge i      = bearAge =<< b ! i
 
-liveInfection :: Set Coord -> Set Coord -> Set Coord
-liveInfection still live =
-  case find shouldBeAlive (Set.toList still) of
-    Nothing -> still
-    Just bear -> liveInfection (Set.delete bear still) (Set.insert bear live)
-  where
-  shouldBeAlive bear = any (`Set.member` live) (neighbors bear)
+liveInfection :: Board -> [Coord] -> Set Coord
+liveInfection b = foldl' (search b (maybe False isNinjaOrBear)) Set.empty
     
 -- | Move the identified bear to a random adjacent cell
 -- returning the new cell and new board
-movePiece ::
+walkPiece ::
   Coord {- ^ Coord of piece to move -} ->
   Board ->
   IO (Coord, Board)
-movePiece c b = do
+walkPiece c b = do
   c' <- randomElement (adjacentVacancies b c)
-  return (c', b // [(c,Nothing),(c', b ! c)])
+  return (c', relocate c c' b)
+
+-- | Move the identified piece to a random empty cell
+-- returning the new cell and new board
+jumpPiece :: Coord -> Board -> IO (Coord, Board)
+jumpPiece c b = do
+  c' <- randomElement $ delete stashCoord [i | (i, Nothing) <- assocs b]
+  return (c', relocate c c' b)
+
+-- | Move a piece from one cell to another leaving
+-- the original cell empty.
+relocate ::
+  Coord {- ^ from -} -> 
+  Coord {- ^ to   -} -> 
+  Board ->
+  Board
+relocate c c' b = b // [(c,Nothing),(c', b ! c)]
 
 -- | Test if a coordinate is adjacent to an empty space.
 hasAdjacentVacancy :: Board -> Coord -> Bool
