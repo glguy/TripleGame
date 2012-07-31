@@ -8,10 +8,10 @@ import Data.List
 import Data.Maybe (fromMaybe, mapMaybe, isNothing)
 import Data.Ord (comparing)
 import Data.Set (Set)
-import System.Random (randomRIO)
 import qualified Data.Set as Set
 
 import Types
+import Shuffle
 
 -- The application logic relies on the promotion size being > 1
 -- | If a promotion rule for a piece exists return it.
@@ -146,9 +146,8 @@ moveBearsHelper stillBears liveBears b =
 
 jumpPiece :: Coord -> Board -> IO (Coord, Board)
 jumpPiece c b = do
-  let xs = delete stashCoord [i | (i, Nothing) <- assocs b]
-  r <- randomRIO (0, length xs-1)
-  let c' = xs !! r
+  c' <- randomElement
+      $ delete stashCoord [i | (i, Nothing) <- assocs b]
   return (c', b // [(c,Nothing),(c', b ! c)])
 
 -- | Move all bears on the board and check for local bear
@@ -179,9 +178,7 @@ movePiece ::
   Board ->
   IO (Coord, Board)
 movePiece c b = do
-  let xs = adjacentVacancies b c
-  r <- randomRIO (0, length xs - 1)
-  let c' = xs !! r
+  c' <- randomElement (adjacentVacancies b c)
   return (c', b // [(c,Nothing),(c', b ! c)])
 
 -- | Test if a coordinate is adjacent to an empty space.

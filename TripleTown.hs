@@ -4,11 +4,11 @@ import Control.Exception (bracket)
 import Data.Array ((!),bounds,Ix(inRange))
 import Data.Maybe (isNothing)
 import Graphics.Vty
-import System.Random (randomRIO)
 
 import Types
 import Art
 import GameLogic
+import Shuffle
 
 data GameState = GameState
   { coord :: Coord
@@ -46,16 +46,7 @@ main = bracket mkVty shutdown $ \vty ->
   in gameLoopWithoutPiece vty gs
 
 randomPiece :: IO InHand
-randomPiece = do
-  let dist = pieceDistribution
-      total = sum (map snd dist)
-  r <- randomRIO (1,total)
-  return $! select r dist
-  where
-  select r ((x,v):xs)
-    | r <= v = x
-    | otherwise = select (r-v) xs
-  select _ _ = error "select: impossible"
+randomPiece = randomElementDist pieceDistribution
 
 gameLoopWithoutPiece :: Vty -> GameState -> IO ()
 gameLoopWithoutPiece vty gs = do
