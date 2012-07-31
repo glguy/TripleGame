@@ -23,26 +23,30 @@ right (x,y) = (x,y+1)
 type Board = Array Coord (Maybe Piece)
 
 isFullBoard :: Board -> Bool
-isFullBoard = all isJust . elems
+isFullBoard = null . drop 1 . filter isNothing . elems
+  -- This function is ugly to deal with the dead "stash" cell
 
 data Piece
   = Rock | BigRock | Grass | Bush | Tree | House | RedHouse | Mansion | Castle | FlyingCastle | TripleCastle
-  | Tombstone | Church | Cathedral | Bear Int
+  | Tombstone | Church | Cathedral | Bear Int | Ninja Int
   deriving (Eq, Show, Read, Ord)
 
 data InHand
   = Piece Piece
   | Crystal
   | Robot
+  | BearHand
+  | NinjaHand
   deriving (Eq, Show, Read)
 
 isRobot :: InHand -> Bool
 isRobot Robot = True
 isRobot _     = False
 
-isBear :: Piece -> Bool
-isBear Bear {} = True
-isBear _       = False
+isNinjaOrBear :: Piece -> Bool
+isNinjaOrBear Bear  {} = True
+isNinjaOrBear Ninja {} = True
+isNinjaOrBear _        = False
 
 bearAge :: Piece -> Maybe Int
 bearAge (Bear age) = Just age

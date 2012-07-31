@@ -33,6 +33,7 @@ promotionRule Cathedral    = Just (3, Nothing)
 promotionRule Rock         = Just (3, Just BigRock)
 promotionRule BigRock      = Just (3, Nothing)
 promotionRule Bear {}      = Nothing
+promotionRule Ninja {}     = Nothing
 
 -- | Return the set of coordinates connected given
 -- a starting location.
@@ -104,57 +105,84 @@ emptyBoard ::
   Board
 emptyBoard r c = listArray ((1,1),(r,c)) (repeat Nothing)
 
--- | Find the set of connected bears and empty space starting
--- at a given coordinate.
-bearGroup :: Board -> Coord -> Set Coord
-bearGroup b = search b (maybe True isBear) Set.empty
-
 -- | Attempt to collapse a group of bears starting at a given coordinate
 -- if and only if the group is determined to be dead.
 bearCollapse :: Board -> Coord -> Board
 bearCollapse b c
-  | null clique                = b
-  | any coordIsEmpty clique    = b
-  | otherwise                  = bWithCollapse
-  where
-  coordAge i      = bearAge =<< b ! i
-  coordIsEmpty i  = isNothing (b ! i)
-  clique          = Set.toList (bearGroup b c)
-  youngestBear    = maximumBy (comparing coordAge) clique
-  bKilledClique   = b // [(dead, Just Tombstone) | dead <- clique]
-  bWithCollapse   = insertPiece youngestBear (Just Tombstone) bKilledClique
+  | b !? c == Just Tombstone   = insertPiece c (Just Tombstone) b
+  | otherwise                  = b
 
 -- | Given a set of bears that not moved, attempt to move as many
 -- bears as possible.
 moveBearsHelper ::
   Set Coord {- ^ Bears that have not moved -} ->
+  [Coord] ->
   Board ->
-  IO Board
-moveBearsHelper stillBears b =
-  case find (hasAdjacentVacancy b) (Set.toList stillBears) of
-    Nothing   -> return b
-    Just bear -> do
-      b' <- movePiece bear b
-      moveBearsHelper (Set.delete bear stillBears) b'
+  IO (Set Coord,[Coord], Board)
+moveBearsHelper stillBears liveBears b =
+  case find canMove (Set.toList stillBears) of
+    Nothing   -> return (stillBears, liveBears, b)
+    Just bear ->
+      case b!bear of
+        Just (Bear {}) -> do
+          (bear', b') <- movePiece bear b
+          moveBearsHelper
+            (Set.delete bear stillBears)
+            (bear' : liveBears)
+            b'
+        Just (Ninja {}) -> do
+          (bear', b') <- jumpPiece bear b
+          moveBearsHelper
+            (Set.delete bear stillBears)
+            (bear' : liveBears)
+            b'
+        _ -> error "moveBearsHelper: impossible"
+
+  where
+  canMove c = case b ! c of
+    Just (Bear {}) -> hasAdjacentVacancy b c
+    Just (Ninja {}) -> not (isFullBoard b)
+    _ -> error "moveBearsHelper: impossible"
+
+jumpPiece :: Coord -> Board -> IO (Coord, Board)
+jumpPiece c b = do
+  let xs = delete stashCoord [i | (i, Nothing) <- assocs b]
+  r <- randomRIO (0, length xs-1)
+  let c' = xs !! r
+  return (c', b // [(c,Nothing),(c', b ! c)])
 
 -- | Move all bears on the board and check for local bear
 -- deaths.
 updateBears :: Coord -> Board -> IO Board
 updateBears c b = do
-  let allBears = Set.fromList [i | (i, Just (Bear _)) <- assocs b]
-  b' <- moveBearsHelper allBears b
-  return $! foldl' bearCollapse b' (c : neighbors c)
+  let allBears = Set.fromList [i | (i, Just p) <- assocs b, isNinjaOrBear p]
+  (still, live, b') <- moveBearsHelper allBears [] b
+  let still' = Set.toList (liveInfection still (Set.fromList live))
+  let dead  = sortBy (flip (comparing coordAge)) still'
+  let b'' = b' // [(i, Just Tombstone) | i <- still']
+  return $! foldl' bearCollapse b'' dead
+  where
+  coordAge i      = bearAge =<< b ! i
+
+liveInfection :: Set Coord -> Set Coord -> Set Coord
+liveInfection still live =
+  case find shouldBeAlive (Set.toList still) of
+    Nothing -> still
+    Just bear -> liveInfection (Set.delete bear still) (Set.insert bear live)
+  where
+  shouldBeAlive bear = any (`Set.member` live) (neighbors bear)
     
 -- | Move the identified bear to a random adjacent cell
 -- returning the new cell and new board
 movePiece ::
   Coord {- ^ Coord of piece to move -} ->
   Board ->
-  IO Board
+  IO (Coord, Board)
 movePiece c b = do
   let xs = adjacentVacancies b c
   r <- randomRIO (0, length xs - 1)
-  return (b // [(c,Nothing),(xs !! r, b ! c)])
+  let c' = xs !! r
+  return (c', b // [(c,Nothing),(c', b ! c)])
 
 -- | Test if a coordinate is adjacent to an empty space.
 hasAdjacentVacancy :: Board -> Coord -> Bool
