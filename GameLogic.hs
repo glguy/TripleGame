@@ -55,8 +55,8 @@ search ::
 search b isMatch visited c
   | not (inRange (bounds b) c) = visited
   | Set.member c visited       = visited
-  | not (isMatch (b ! c))      = visited
-  | otherwise                  = continue
+  | isMatch (b ! c)            = continue
+  | otherwise                  = visited
   where
   continue = foldl' (search b isMatch) (Set.insert c visited) (neighbors c)
 
@@ -109,31 +109,23 @@ bearCollapse b c
 -- bears as possible.
 moveBearsHelper ::
   Set Coord {- ^ Bears that have not moved -} ->
-  [Coord] ->
+  [Coord]   {- ^ Bears that have moved     -} ->
   Board ->
   IO (Set Coord,[Coord], Board)
 moveBearsHelper stillBears liveBears b =
   case find canMove (Set.toList stillBears) of
     Nothing   -> return (stillBears, liveBears, b)
-    Just bear ->
-      case b!bear of
-        Just (Bear {}) -> do
-          (bear', b') <- walkPiece bear b
-          moveBearsHelper
-            (Set.delete bear stillBears)
-            (bear' : liveBears)
-            b'
-        Just (Ninja {}) -> do
-          (bear', b') <- jumpPiece bear b
-          moveBearsHelper
-            (Set.delete bear stillBears)
-            (bear' : liveBears)
-            b'
+    Just bear -> do
+      (bear', b') <- case b!bear of
+        Just (Bear  {}) -> walkPiece bear b
+        Just (Ninja {}) -> jumpPiece bear b
         _ -> error "moveBearsHelper: impossible"
-
+      let stillBears' = Set.delete bear stillBears
+          liveBears'  = bear' : liveBears
+      moveBearsHelper stillBears' liveBears' b'
   where
   canMove c = case b ! c of
-    Just (Bear {}) -> hasAdjacentVacancy b c
+    Just (Bear  {}) -> hasAdjacentVacancy b c
     Just (Ninja {}) -> not (isFullBoard b)
     _ -> error "moveBearsHelper: impossible"
 
@@ -152,15 +144,13 @@ updateBears b = do
   where
   coordAge i      = bearAge =<< b ! i
 
+-- | Find the set of live bears given a list of bears that have moved.
 liveInfection :: Board -> [Coord] -> Set Coord
 liveInfection b = foldl' (search b (maybe False isNinjaOrBear)) Set.empty
     
 -- | Move the identified bear to a random adjacent cell
 -- returning the new cell and new board
-walkPiece ::
-  Coord {- ^ Coord of piece to move -} ->
-  Board ->
-  IO (Coord, Board)
+walkPiece :: Coord -> Board -> IO (Coord, Board)
 walkPiece c b = do
   c' <- randomElement (adjacentVacancies b c)
   return (c', relocate c c' b)

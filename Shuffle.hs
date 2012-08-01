@@ -1,7 +1,9 @@
+-- | Utility functions for providing random elements to the game.
 module Shuffle where
 
 import System.Random
 
+-- | Select an element from a non-empty list with uniform distribution.
 randomElement :: [a] -> IO a
 randomElement xs
   | n == 0 = fail "randomElement: no elements"
@@ -10,6 +12,7 @@ randomElement xs
   where
   n = length xs
 
+-- | Select an element from a non-empty list with custom distribution.
 randomElementDist :: [(a,Int)] -> IO a
 randomElementDist dist
   | total <= 0 = fail "randomElementDist: bad distribution"
