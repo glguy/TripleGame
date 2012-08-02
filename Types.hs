@@ -14,9 +14,10 @@ stashCoord :: Coord
 stashCoord = (1,1)
 
 -- | Produce a list of potentially adjacent coordinates.
--- No bounds checking is possible.
-neighbors :: Coord -> [Coord]
-neighbors c = delete stashCoord [up c, down c, left c, right c]
+neighbors :: Board -> Coord -> [Coord]
+neighbors b c = filter (inRange (bounds b))
+              . delete stashCoord
+              $ [up c, down c, left c, right c]
 
 -- | Move coordinates around one step.
 up, down, left, right :: Coord -> Coord
@@ -73,10 +74,3 @@ bearAge :: Piece -> Maybe Int
 bearAge (Bear  age) = Just age
 bearAge (Ninja age) = Just age
 bearAge _           = Nothing
-
--- | Return the element stored in the array if it is
--- defined and the coordinate is contained in the array.
-(!?) :: Ix i => Array i (Maybe e) -> i -> Maybe e
-a !? i
-  | inRange (bounds a) i = a ! i
-  | otherwise            = Nothing

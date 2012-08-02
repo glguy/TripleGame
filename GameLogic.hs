@@ -1,6 +1,6 @@
 -- | Support for operations directly on the Board object
 -- including placing new pieces and animating the bears.
-module GameLogic (updateBears, insertPiece, insertCrystal) where
+module GameLogic (updateBears, insertPiece, insertCrystal, liveInfection, moveBearsHelper) where
 
 import Control.Monad
 import Data.Array
@@ -38,10 +38,7 @@ promotionRule Ninja {}     = Nothing
 -- | Return the set of coordinates connected given
 -- a starting location.
 connectedGroup :: Coord -> Board -> Set Coord
-connectedGroup c b =
-  case b !? c of
-    Nothing     -> Set.empty
-    Just object -> search b (Just object ==) Set.empty c
+connectedGroup c b = search b (b!c ==) Set.empty c
 
 -- | Find the set of coordinates which are connected along edges
 -- and which satisfy the given predicate starting from the given
@@ -53,23 +50,25 @@ search ::
   Coord                 {- ^ Start start location  -} ->
   Set Coord
 search b isMatch visited c
-  | not (inRange (bounds b) c) = visited
   | Set.member c visited       = visited
   | isMatch (b ! c)            = continue
   | otherwise                  = visited
   where
-  continue = foldl' (search b isMatch) (Set.insert c visited) (neighbors c)
+  continue = foldl' (search b isMatch) (Set.insert c visited) (neighbors b c)
 
 -- | Insert a piece into the board and reduce the board when possible.
 insertPiece :: Coord -> Maybe Piece -> Board -> Board
-insertPiece c mbP b = fromMaybe boardBeforePromtion mbBoardAfterPromotion
+insertPiece c mbP b = reduceBoard (b // [(c,mbP)]) c
+
+-- | Reduce the board when possible from the given coordinate.
+reduceBoard :: Board -> Coord -> Board
+reduceBoard b c = fromMaybe b mbBoardAfterPromotion
   where
-  boardBeforePromtion   = b // [(c,mbP)]
   mbBoardAfterPromotion = do
-    p          <- mbP
+    p          <- b!c
     (sz, repl) <- promotionRule p
 
-    let clique = connectedGroup c boardBeforePromtion
+    let clique = connectedGroup c b
     guard (Set.size clique >= sz)
 
     let bMinusClique = b // [(i,Nothing) | i <- Set.toList clique]
@@ -83,9 +82,11 @@ insertCrystal c b
   | null outcomes = insertPiece c (Just Rock) b
   | otherwise     = selectBoard (maximumBy crystalLogic outcomes)
   where
-  candidatePieces = mapMaybe (b !?) (neighbors c)
+  candidatePieces = mapMaybe (b !) (neighbors b c)
   outcomes        = mapMaybe (tryForPromotion b c) candidatePieces
 
+  -- The greatest element is the one which creates the largest piece using
+  -- the smallest piece.
   crystalLogic (new1,old1,_) (new2,old2,_) = compare (new1,old2) (new2,old1)
   selectBoard  (_   ,_   ,x) = x
 
@@ -94,59 +95,66 @@ insertCrystal c b
 tryForPromotion :: Board -> Coord -> Piece -> Maybe (Maybe Piece,Piece,Board)
 tryForPromotion b c p = do
   let b' = insertPiece c (Just p) b
-  let p' = b' !? c
+  let p' = b' ! c
   guard (Just p /= p')
   return (p', p, b')
 
--- | Attempt to collapse a group of bears starting at a given coordinate
--- if and only if the group is determined to be dead.
-bearCollapse :: Board -> Coord -> Board
-bearCollapse b c
-  | b !? c == Just Tombstone   = insertPiece c (Just Tombstone) b
-  | otherwise                  = b
+-- | Move all bears that can move and return
+-- (still bears, moved bears, resulting board)
+moveBears :: Board -> IO ([Coord],[Coord],Board)
+moveBears b = moveBearsHelper allBears [] b
+  where allBears = [i | (i, Just p) <- assocs b, isNinjaOrBear p]
 
 -- | Given a set of bears that not moved, attempt to move as many
 -- bears as possible.
 moveBearsHelper ::
-  Set Coord {- ^ Bears that have not moved -} ->
-  [Coord]   {- ^ Bears that have moved     -} ->
+  [Coord] {- ^ Bears that have not moved -} ->
+  [Coord] {- ^ Bears that have moved     -} ->
   Board ->
-  IO (Set Coord,[Coord], Board)
+  IO ([Coord],[Coord], Board)
 moveBearsHelper stillBears liveBears b =
-  case find canMove (Set.toList stillBears) of
+  case find canMove stillBears of
     Nothing   -> return (stillBears, liveBears, b)
     Just bear -> do
-      (bear', b') <- case b!bear of
-        Just (Bear  {}) -> walkPiece bear b
-        Just (Ninja {}) -> jumpPiece bear b
-        _ -> error "moveBearsHelper: impossible"
-      let stillBears' = Set.delete bear stillBears
-          liveBears'  = bear' : liveBears
-      moveBearsHelper stillBears' liveBears' b'
+      (bear', b') <- doMove bear
+      moveBearsHelper
+        (delete bear stillBears)
+        (bear' : liveBears)
+        b'
   where
   canMove c = case b ! c of
     Just (Bear  {}) -> hasAdjacentVacancy b c
     Just (Ninja {}) -> not (isFullBoard b)
-    _ -> error "moveBearsHelper: impossible"
+    _ -> error "moveBearsHelper:canMove: impossible"
+
+  doMove c = case b!c of
+    Just (Bear  {}) -> walkPiece c b
+    Just (Ninja {}) -> jumpPiece c b
+    _ -> error "moveBearsHelper:doMove: impossible"
+
 
 -- | Move all bears on the board and check for bear deaths.
 updateBears :: Board -> IO Board
 updateBears b = do
-  let allBears = Set.fromList [i | (i, Just p) <- assocs b, isNinjaOrBear p]
-  (still, moved, bAfterMoves) <- moveBearsHelper allBears [] b
-  let live = liveInfection b moved
-  let dead = Set.toList (still `Set.difference` live)
-  let bWithTombstones = bAfterMoves // [(i, Just Tombstone) | i <- dead]
+  (stillBears, movedBears, bAfterMoves) <- moveBears b
+  let liveBears = liveInfection bAfterMoves movedBears
+  let deadBears = stillBears \\ liveBears
 
-  let ordered = sortBy (flip (comparing coordAge)) dead
-  return $! foldl' bearCollapse bWithTombstones ordered
+  -- Do a mass update to ensure that reductions can account for
+  -- all of the tombstones rather than using 'insertPiece' repeatedly
+  let bWithTombstones = bAfterMoves // [(i, Just Tombstone) | i <- deadBears]
 
-  where
-  coordAge i      = bearAge =<< b ! i
+  -- Reductions must be considered in order of bear youth.
+  -- Multiple reductions could occur due to bear groups being
+  -- disjoint.
+  let coordAge i   = bearAge =<< b ! i
+  let orderedBears = sortBy (flip (comparing coordAge)) deadBears
+  return $! foldl' reduceBoard bWithTombstones orderedBears
 
 -- | Find the set of live bears given a list of bears that have moved.
-liveInfection :: Board -> [Coord] -> Set Coord
-liveInfection b = foldl' (search b (maybe False isNinjaOrBear)) Set.empty
+liveInfection :: Board -> [Coord] -> [Coord]
+liveInfection b cs =
+  Set.toList (foldl' (search b (maybe False isNinjaOrBear)) Set.empty cs)
     
 -- | Move the identified bear to a random adjacent cell
 -- returning the new cell and new board
@@ -159,7 +167,7 @@ walkPiece c b = do
 -- returning the new cell and new board
 jumpPiece :: Coord -> Board -> IO (Coord, Board)
 jumpPiece c b = do
-  c' <- randomElement $ delete stashCoord [i | (i, Nothing) <- assocs b]
+  c' <- randomElement (empties b)
   return (c', relocate c c' b)
 
 -- | Move a piece from one cell to another leaving
@@ -177,6 +185,9 @@ hasAdjacentVacancy b c = not (null (adjacentVacancies b c))
 
 -- | Return the list of empty spaces adjacent to a coordinate.
 adjacentVacancies :: Board -> Coord -> [Coord]
-adjacentVacancies b c = filter isValid (neighbors c)
+adjacentVacancies b c = filter isVacant (neighbors b c)
   where
-  isValid i = inRange (bounds b) i && isNothing (b ! i)
+  isVacant i = isNothing (b ! i)
+
+empties :: Board -> [Coord]
+empties b = delete stashCoord [i | (i, Nothing) <- assocs b]
