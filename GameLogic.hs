@@ -35,26 +35,32 @@ promotionRule BigRock      = Just (3, Nothing)
 promotionRule Bear {}      = Nothing
 promotionRule Ninja {}     = Nothing
 
+
 -- | Return the set of coordinates connected given
--- a starting location.
-connectedGroup :: Coord -> Board -> Set Coord
-connectedGroup c b = search b (b!c ==) Set.empty c
+-- a starting location and a predicate characterizing
+-- valid elements.
+searchBoard :: Board -> (Maybe Piece -> Bool) -> Coord -> Set Coord
+searchBoard b p = search (p . (b!)) (neighbors b) Set.empty
 
 -- | Find the set of coordinates which are connected along edges
 -- and which satisfy the given predicate starting from the given
 -- coordinate.
 search ::
-  Board                 {- ^ Board to search       -} ->
-  (Maybe Piece -> Bool) {- ^ Predicate function    -} ->
-  Set Coord             {- ^ Known good nodes      -} ->
-  Coord                 {- ^ Start start location  -} ->
-  Set Coord
-search b isMatch visited c
-  | Set.member c visited       = visited
-  | isMatch (b ! c)            = continue
-  | otherwise                  = visited
+  Ord coord =>
+  (coord -> Bool)       {- ^ Predicate function    -} ->
+  (coord -> [coord])    {- ^ Neighbor function     -} ->
+  Set coord             {- ^ Initial visited set   -} ->
+  coord                 {- ^ Search start location -} ->
+  Set coord             {- ^ Set of connected coordinates -}
+search p n = go
   where
-  continue = foldl' (search b isMatch) (Set.insert c visited) (neighbors b c)
+  go visited c
+    | Set.member c visited = visited
+    | p c                  = continue
+    | otherwise            = visited
+    where
+    visited' = Set.insert c visited
+    continue = foldl' go visited' (n c)
 
 -- | Insert a piece into the board and reduce the board when possible.
 insertPiece :: Coord -> Maybe Piece -> Board -> Board
@@ -68,7 +74,7 @@ reduceBoard b c = fromMaybe b mbBoardAfterPromotion
     p          <- b!c
     (sz, repl) <- promotionRule p
 
-    let clique = connectedGroup c b
+    let clique = searchBoard b (b!c ==) c
     guard (Set.size clique >= sz)
 
     let bMinusClique = b // [(i,Nothing) | i <- Set.toList clique]
@@ -153,9 +159,11 @@ updateBears b = do
 
 -- | Find the set of live bears given a list of bears that have moved.
 liveInfection :: Board -> [Coord] -> [Coord]
-liveInfection b cs =
-  Set.toList (foldl' (search b (maybe False isNinjaOrBear)) Set.empty cs)
-    
+liveInfection b = Set.toList . foldl' growBearSet Set.empty
+  where
+  hasBearLike = maybe False isNinjaOrBear . (b!)
+  growBearSet = search hasBearLike (neighbors b)
+
 -- | Move the identified bear to a random adjacent cell
 -- returning the new cell and new board
 walkPiece :: Coord -> Board -> IO (Coord, Board)
