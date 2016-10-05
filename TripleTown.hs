@@ -39,7 +39,7 @@ pieceDistribution =
   ]
 
 main :: IO ()
-main = bracket mkVty shutdown $ \vty ->
+main = bracket (mkVty mempty) shutdown $ \vty ->
   let boardRows = 6
       boardCols = 6
       gs = startingGameState boardRows boardCols
@@ -59,7 +59,7 @@ gameLoopWithoutPiece vty gs = do
 gameLoop :: Vty -> InHand -> GameState -> IO ()
 gameLoop vty p gs = do
     update vty (gamePicture (textures gs) (coord gs) p (stash gs) (board gs))
-    ev <- next_event vty
+    ev <- nextEvent vty
     let c = coord gs
         b = board gs
     case ev of

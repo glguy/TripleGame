@@ -7,6 +7,7 @@ import Types
 
 data TexturePack = TexturePack
   { emptyGraphic :: Attr -> Image
+  , selectedEmptyGraphic :: Attr -> Image
   , selectedAttr :: Attr
   , stashAttr    :: Attr
   , defaultAttr  :: Attr
@@ -16,18 +17,20 @@ data TexturePack = TexturePack
 asciiPack :: TexturePack
 asciiPack = TexturePack
   { emptyGraphic = emptySquareAscii
-  , selectedAttr = with_style def_attr reverse_video
-  , stashAttr    = with_back_color def_attr magenta
-  , defaultAttr  = def_attr
+  , selectedEmptyGraphic = emptySquareAscii
+  , selectedAttr = withStyle defAttr reverseVideo
+  , stashAttr    = withBackColor defAttr magenta
+  , defaultAttr  = defAttr
   , pieceGraphic = pieceGraphicAscii
   }
 
 unicodePack :: TexturePack
 unicodePack = TexturePack
   { emptyGraphic = emptySquareUnicode
-  , selectedAttr = with_style def_attr reverse_video
-  , stashAttr    = with_back_color def_attr magenta
-  , defaultAttr  = def_attr
+  , selectedEmptyGraphic = emptyHighlightedSquareUnicode
+  , selectedAttr = withStyle defAttr reverseVideo
+  , stashAttr    = withBackColor defAttr magenta
+  , defaultAttr  = defAttr
   , pieceGraphic = pieceGraphicUnicode
   }
   
@@ -38,11 +41,11 @@ unicodePack = TexturePack
 
 gamePicture :: TexturePack -> Coord -> InHand -> Maybe InHand -> Board -> Picture
 gamePicture pack c p s b = Picture
-  { pic_cursor = NoCursor
-  , pic_image  = drawGame pack c p s b
-  , pic_background = Background
-      { background_char = ' '
-      , background_attr = def_attr
+  { picCursor = NoCursor
+  , picLayers  = [ drawGame pack c p s b ]
+  , picBackground = Background
+      { backgroundChar = ' '
+      , backgroundAttr = defAttr
       }
   }
 
@@ -58,23 +61,27 @@ drawGame pack c p stash b =
 
 
 doneImage :: Image
-doneImage = string def_attr "Game Over"
+doneImage = string defAttr "Game Over"
 
 drawCurrent :: TexturePack -> InHand -> Image
 drawCurrent pack p =
-  (string def_attr "Current: "
-   <-> string def_attr (heldText p))
+  (string defAttr "Current: "
+   <-> string defAttr (heldText p))
   <|> pieceGraphic pack (defaultAttr pack) p
 
 -- | Draw board with a highlighted piece
 drawBoard :: TexturePack -> Coord -> Maybe InHand -> Board -> Image
-drawBoard pack cur stash b = vert_cat [draw_row r | r <- [rMin..rMax]]
+drawBoard pack cur stash b = vertCat [draw_row r | r <- [rMin..rMax]]
   where
   ((rMin,cMin),(rMax,cMax)) = bounds b
-  draw_row r = horiz_cat [draw_cell r c <|> char def_attr ' ' | c <- [cMin..cMax]]
+  draw_row r = horizCat [draw_cell r c <|> char defAttr ' ' | c <- [cMin..cMax]]
 
-  draw_cell r c = maybe (emptyGraphic pack a) (pieceGraphic pack a) p
+  draw_cell r c = maybe (egraph pack a) (pieceGraphic pack a) p
     where
+    egraph
+      | (r,c) == cur        = selectedEmptyGraphic
+      | otherwise           = emptyGraphic
+
     a | (r,c) == cur        = selectedAttr pack
       | (r,c) == stashCoord = stashAttr    pack
       | otherwise           = defaultAttr  pack
@@ -90,8 +97,11 @@ emptySquareAscii attr = stringsToImage attr
 emptySquareUnicode :: Attr -> Image
 emptySquareUnicode attr = string attr "⬛ "
 
+emptyHighlightedSquareUnicode :: Attr -> Image
+emptyHighlightedSquareUnicode attr = string attr "⬜ "
+
 stringsToImage :: Attr -> [String] -> Image
-stringsToImage attr xs = vert_cat (map (string attr) xs)
+stringsToImage attr xs = vertCat (map (string attr) xs)
 
 brown, gray, orange :: Color
 brown  = Color240 107
@@ -100,7 +110,7 @@ orange = Color240 180
                   
 pieceGraphicAscii :: Attr -> InHand -> Image
 pieceGraphicAscii attr inh =
- let aux c xs = vert_cat ((map (string (with_fore_color attr c))) xs) in
+ let aux c xs = vertCat ((map (string (withForeColor attr c))) xs) in
   case inh of
     Robot -> aux orange
                   ["^ ^",
@@ -136,10 +146,10 @@ pieceGraphicAscii attr inh =
                       ["   ",
                        "   ",
                        "o8o"]
-      Tree         -> vert_cat
-                      [string (with_fore_color attr green) "o8o",
-                       string (with_fore_color attr brown) " | ",
-                       string (with_fore_color attr brown) " | "]
+      Tree         -> vertCat
+                      [string (withForeColor attr green) "o8o",
+                       string (withForeColor attr brown) " | ",
+                       string (withForeColor attr brown) " | "]
       House        -> aux white
                       ["   ",
                        " _ ",
