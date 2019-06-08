@@ -16,5 +16,6 @@ executable TripleTown
   main-is:             TripleTown.hs
   ghc-options: -threaded
   build-depends:       base,
-                       vty >=5.15 && <5.16,
-                       array >=0.4 && <0.6, containers, random
+                       vty >=5.25.1 && <5.26,
+                       array >=0.4 && <0.6,
+                       containers, random
