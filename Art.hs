@@ -107,7 +107,7 @@ brown, gray, orange :: Color
 brown  = Color240 107
 gray   = Color240 214
 orange = Color240 180
-                  
+
 pieceGraphicAscii :: Attr -> InHand -> Image
 pieceGraphicAscii attr inh =
  let aux c xs = vertCat ((map (string (withForeColor attr c))) xs) in

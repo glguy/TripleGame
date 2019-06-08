@@ -24,7 +24,7 @@ startingGameState rows cols = GameState
   , turn  = 0
   , board = emptyBoard rows cols
   , stash = Nothing
-  , textures = unicodePack
+  , textures = asciiPack
   }
 
 pieceDistribution :: [(InHand,Int)]
